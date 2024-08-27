@@ -31,8 +31,8 @@ the art *The Adaptable Input Output (I/O) System* called
 
 In the current state of the project, we have only focussed on the N-to-M checkpointing,
 i.e., writing (saving) on N processors and reading (loading) on M processors.
-Postprocessing and visualization of the simulation is generally a distinct part
-of the workflow with dedicated softwares which need to consume the data of
+This is useful since, postprocessing and visualization of the simulation is generally a
+distinct part of the workflow with dedicated softwares which need to consume the data of
 the simulation from a compute cluster and may usually be performed locally with different
 number of processors.
 
@@ -50,6 +50,8 @@ TODO: short summary?
 1. Write and read mesh using ADIOS2 [(open)](https://github.com/FEniCS/dolfinx/pull/3291)
 2. Write and read meshtags using ADIOS2 [(open)](https://github.com/FEniCS/dolfinx/pull/3324)
 3. Write functions using ADIOS2 [(open)](https://github.com/FEniCS/dolfinx/pull/3368)
+
+The mentors for this GSoC project were Jørgen S. Dokken and Jack S. Hale.
 
 ## Details
 
