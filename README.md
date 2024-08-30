@@ -13,9 +13,9 @@ consumption and money.
 
 The common use case of checkpointing is for visualization, which calls for
 mapping the data structures of the scientific simulation softwares to the
-dedicated file systems, for example VTX and VTKHDF etc, which can then be
+dedicated file formats, for example VTX and VTKHDF etc, which can then be
 recognized by the visualization tools like Paraview and ViSit.
-Other use cases include:
+Other use cases of checkpointing include:
 (i) flexible start and stop of the simulation,
 (ii) control over simulation in case of diverging iterative solvers,
 (iii) for aggregated post processing and
@@ -25,7 +25,8 @@ The goals of this GSoC project and its extended future work is based on the
 inclusion of the prototype checkpointing framework
 [ADIOS4DOLFINx](https://jsdokken.com/adios4dolfinx/README.html,)
 into DOLFINx the main component of the FEniCS project.
-ADIOS4DOLFINx ([Dokken, 2024](https://github.com/openjournals/joss-papers/blob/joss.06451/joss.06451/10.21105.joss.06451.pdf)) implements several variations of checkpointing using the state of
+ADIOS4DOLFINx ([Dokken, 2024](https://github.com/openjournals/joss-papers/blob/joss.06451/joss.06451/10.21105.joss.06451.pdf))
+implements several variations of checkpointing using the state of
 the art *The Adaptable Input Output (I/O) System* called
 [ADIOS2](https://csmd.ornl.gov/software/adios2).
 
@@ -52,6 +53,15 @@ The current state of the work of this GSoC project consists of the following *pu
 
 The mentors for this GSoC project were Jørgen S. Dokken and Jack S. Hale.
 
+## Preparation: tinkering with DOLFINx and experimenting with VTKHDF
+
+ 1. To understand the data structures of DOLFINx, parallel debug of demos was helpful
+ 2. networkx python graph library was used to understand geometry and topology dof local and global enumeration and visualize the partitions.
+    NOTE: There already exists a more mature tool [febug](https://github.com/nate-sime/febug) to do the same and much more.
+ 3. Tangential to the goals of the project, we first tried checkpointing using the
+    [VTKHDF](https://docs.vtk.org/en/latest/design_documents/VTKFileFormats.html#vtkhdf-file-format) file format,
+    since it can also be used for visualization in Paraview.
+
 ## ADIOS2
 Coming back to the main goal of this GSoC project which was to use ADIOS2 library to
 create native checkpointing for DOLFINx, we give a brief introduction of ADIOS2.
@@ -72,50 +82,8 @@ We use only a tiny subset of the features of the ADIOS2 library.
 Our target engine types are BP4, BP5 and HDF5, and our unit tests have successfully passed for BP4 and BP5.
 We write data from (multiple) processes to global arrays and read back chunks to reconstruct the DOLFINx objects: Mesh, Meshtags and Functions.
 
-NOTE: An idea for a future feature enhancement is that we could use data compression operators for arrays which store topology offsets and cell types which have a great potential for compression.
-
-## Checkpointing module (part 1): Mesh
-
-Mesh data consists of geometry and topology.
-Geometry can be time dependent.
-Topology is constant over time.
-
-TODO:
- - [ ] description of node coordinates and coordinate element.
- - [ ] description of topology and mapping between geometry and topology entities
-
-The metadata of Mesh is:
-
-1. Attributes
- 
- - `version` : version of DOLFINx
- - `git_hash` : GIT HASH of the DOLFINx used to generate the data
- - `name` : name of the mesh
- - `dim` : geometrical dimension of the mesh
- - `tdim` : topological dimension
- - `cell_type` : cell type of the coordinate element
- - `degree` : polynomial degree of the coordinate element used to define the triangulation
- - `lagrange_variant` : integration points
-
-2. Variables
-Note: The following scalar variables are used to define the size of the ADIOS2 global arrays when
-writing and can be inferred from the dimensions of the saved ADIOS2 global arrays when reading.
-Therefore, these scalar variables are not saved.
-
-   - Scalars
-        - `num_nodes` : number of vertices in the mesh
-        - `num_cells` : number of cells
-
-   - Arrays
-        - `x` : coordinate array, size `(num_nodes, 3)`
-        - `topology` : cell to vertex connectivity
-            - `topology_array` : flattened array
-            - `topolgy_offset` : offsets demarcating the cells
-
-        The following are needed in optimized N-N checkpointing where the
-        partition information is also saved.
-        - `input_global_indices` : original input mesh's global indices
-        - `orginal_cell_indices` : original input mesh's cell indices
+NOTE: An idea for a future feature enhancement is that we could use data compression operators for arrays which store topology offsets
+and cell types which have a great potential for compression.
 
 ### Typical write
 
@@ -136,12 +104,121 @@ Example:
                                                 {offset, 0},
                                                 {num_dofs_local, 3},
                                                 adios2::ConstantDims);
- 
+
    engine.Put(var_x, x.data());
 ```
 
 ### Typical read
-TODO: write about mesh partitioning
+We first check if specific arrays exist in the checkpointed data and fetch a selection
+from the global arrays to each process reading the data.
+Then with all the necessary tools that already exist in DOLFINx and its mesh partitioning dependencies,
+MPI neighbourhood communications are performed and the DOLFINx objects:
+Mesh, MeshTags, and Functions are reconstructed.
+
+### Wrapper to ADIOS2 for creating DOLFINx python APIs
+
+ADIOS2 is written in C++ and has many language bindings including one for Python.
+However the Python bindings are created using pybind, whereas the Python bindings
+in DOLFINx are created using nanobind, therefore we created a basic wrapper to
+ADIOS2.
+
+The below snippet shows the creation of ADIOS2 instance and adding
+an IO with tag `mesh-write` and opening `mesh.bp` file with a corresponding
+Engine in the `write` mode.
+The file `checkpointing.yml` contains the ADIOS2 configurations.
+
+```python
+import os
+from dolfinx import io
+
+config_path = os.getcwd() + "/checkpointing.yml"
+adios2 = io.ADIOS2(config_path, MPI.COMM_WORLD)
+
+tag = "mesh-write"
+adios2.add_io(filename="mesh.bp", tag=tag, mode="write")
+
+```
+
+## Checkpointing module (part 1): Mesh
+
+For the checkpointing of Mesh, we need to store
+    1. versioning for backward compatibity checks
+    2. geometry: nodes defined with their coordinates, and a finite element that will create the triangulation
+    3. topology: cell to node connectivity
+
+Note that node coordinates can be time dependent, hence, geometry can be time dependent, whereas topology is constant over time.
+
+The metadata for checkpointing of Mesh is:
+
+1. Attributes
+ 
+ - `version` : version of DOLFINx
+ - `git_hash` : GIT HASH of the DOLFINx used to generate the data
+ - `name` : name of the mesh
+ - `dim` : geometrical dimension of the mesh
+ - `tdim` : topological dimension
+ - `cell_type` : cell type of the coordinate element
+ - `degree` : polynomial degree of the coordinate element used to define the triangulation
+ - `lagrange_variant` : integration points
+
+2. Variables
+
+   - Scalars
+        Note: The following scalar variables are used to define the size of the ADIOS2 global arrays when
+        writing and can be inferred from the dimensions of the saved ADIOS2 global arrays when reading.
+        Therefore, these scalar variables need not be saved.
+
+        - `num_nodes` : number of vertices in the mesh
+        - `num_cells` : number of cells
+
+   - Arrays
+        - `x` : coordinate array, size `(num_nodes, 3)`
+        - `topology` : cell to node connectivity
+            - `topology_array` : flattened array
+            - `topolgy_offset` : offsets demarcating the cells
+
+        The following are needed in optimized N-N checkpointing where the
+        partition information is also saved.
+        - `input_global_indices` : original input mesh's global indices
+        - `orginal_cell_indices` : original input mesh's cell indices
+
+The following demonstrates the python API for checkpointing a time dependent mesh
+
+```python
+
+from dolfinx import io, mesh
+
+msh = mesh.create_rectangle(
+    comm=MPI.COMM_WORLD,
+    points=((0.0, 0.0), (1.0, 1.0)),
+    n=(4, 4),
+    cell_type=mesh.CellType.triangle,
+)
+
+io.write_mesh(adios2, tag, msh)
+
+msh.geometry.x[:] += 4
+io.write_mesh(adios2, tag, msh, time=0.5)
+
+msh.geometry.x[:] += 4
+io.write_mesh(adios2, tag, msh, time=1.0)
+
+adios2.close(tag)
+
+```
+
+ADIOS2 comes with a command line tool `bpls` to query files.
+We write the above mesh with $3$ processes and querying with `bpls` shows
+
+TODO: Update with cleaner screenshots
+
+![mesh_w3_topo](images/mesh_topology.png)
+![mesh_w3_geo](images/mesh_geometry.png)
+
+On reading with $2$ procceses and saving again, we can query with `bpls` which shows
+![mesh_r2_topo](images/mesh_topology_read.png)
+![mesh_r2_geo](images/mesh_geometry_read.png)
+
 
 ## Checkpointing module (part 2): Meshtags
 
