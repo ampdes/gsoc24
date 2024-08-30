@@ -212,11 +212,22 @@ We write the above mesh with $3$ processes and querying with `bpls` shows
 
 TODO: Update with cleaner screenshots
 
+Topology:
+
 ![mesh_w3_topo](images/mesh_topology.png)
+
+Geometry over $3$ time steps:
+
 ![mesh_w3_geo](images/mesh_geometry.png)
 
 On reading with $2$ procceses and saving again, we can query with `bpls` which shows
+
+Topology:
+
 ![mesh_r2_topo](images/mesh_topology_read.png)
+
+Geometry over $3$ time steps:
+
 ![mesh_r2_geo](images/mesh_geometry_read.png)
 
 
@@ -253,6 +264,24 @@ Therefore, these scalar variables are not saved.
         - `{name}_topology` : This is a 2 dimensional array of size
             `({name}_num_saved_tag_entities, {name}_num_dofs_per_entity)`
         - `{name}_values` : This is an array of length `{name}_num_saved_tag_entities`
+
+Querying with `bpls` shows
+
+Attributes:
+
+![meshtags_attr](images/meshtags_attributes.png)
+
+Meshtags *entity_0*:
+
+![meshtags_e0](images/meshtags_entity0.png)
+
+Meshtags *entity_1*:
+
+![meshtags_e1](images/meshtags_entity1.png)
+
+Meshtags *entity_2*:
+
+![meshtags_e2](images/meshtags_entity2.png)
 
 ## Checkpointing module (part 3): Functions
 
